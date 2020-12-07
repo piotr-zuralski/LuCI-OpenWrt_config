@@ -1,0 +1,80 @@
+---
+on:
+  pull_request:
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: styfle/cancel-workflow-action@0.6.0
+        with:
+          access_token: "${{ secrets.GITHUB_TOKEN }}"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: github/super-linter@v3
+        id: lint
+        env:
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          FILTER_REGEX_EXCLUDE: .*(vendor|\.old|\.vscode|\.idea/).*
+
+  automate:
+    runs-on: ubuntu-latest
+    if: (github.actor == 'dependabot' || github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]')
+    steps:
+      - uses: fountainhead/action-wait-for-check@v1.0.0
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          checkName: lint
+          ref: "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - uses: "actions/github-script@v2"
+        with:
+          debug: true
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            const pr = context.payload.pull_request
+            const repo = context.repo
+            
+            await github.issues.addAssignees({
+              owner: repo.owner,
+              repo: repo.repo,
+              issue_number: pr.number,
+              assignees: [repo.owner],
+            });
+            
+            await github.pulls.requestReviewers({
+              owner: repo.owner,
+              repo: repo.repo,
+              pull_number: pr.number,
+              reviewers: [repo.owner],
+            });
+            
+            await github.pulls.createReview({
+              owner: repo.owner,
+              repo: repo.repo,
+              pull_number: pr.number,
+              event: 'APPROVE',
+            });
+                        
+            await github.pulls.merge({
+              merge_method: "squash",
+              owner: repo.owner,
+              pull_number: pr.number,
+              repo: repo.repo
+            })
+  pr-automation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: PR Automation
+        uses: devjoes/pr-automation@v0.1.0
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          deleteOnMerge: true
+          deleteOnClose: true
+          branchBlackList: "totally-random-branch"
